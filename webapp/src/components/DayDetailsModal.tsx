@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShiftEntry, ShiftType, UserSettings } from '../types';
 import { hapticFeedback } from '../utils/telegram';
-import { X, Clock, Trash2, Check } from 'lucide-react';
+import { X, Clock, Trash2, Check, Plus, Minus } from 'lucide-react';
 
 interface DayDetailsModalProps {
   isOpen: boolean;
@@ -26,6 +26,8 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
   const [halfDayTime, setHalfDayTime] = useState<string>(settings.halfDayTimeSlot || '09:00 - 14:00');
   const [customHours, setCustomHours] = useState<number>(settings.fullShiftHours);
   const [customEarned, setCustomEarned] = useState<number>(settings.rateFull);
+  const [hoursStr, setHoursStr] = useState<string>(String(settings.fullShiftHours));
+  const [earnedStr, setEarnedStr] = useState<string>(String(settings.rateFull));
   const [note, setNote] = useState<string>('');
 
   useEffect(() => {
@@ -34,12 +36,16 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
       setHalfDayTime(currentShift.halfDayTime || settings.halfDayTimeSlot || '09:00 - 14:00');
       setCustomHours(currentShift.hours);
       setCustomEarned(currentShift.earned);
+      setHoursStr(String(currentShift.hours));
+      setEarnedStr(String(currentShift.earned));
       setNote(currentShift.note || '');
     } else {
       setShiftType('full');
       setHalfDayTime(settings.halfDayTimeSlot || '09:00 - 14:00');
       setCustomHours(settings.fullShiftHours);
       setCustomEarned(settings.rateFull);
+      setHoursStr(String(settings.fullShiftHours));
+      setEarnedStr(String(settings.rateFull));
       setNote('');
     }
   }, [currentShift, settings, isOpen]);
@@ -52,13 +58,33 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
     if (newType === 'full') {
       setCustomHours(settings.fullShiftHours);
       setCustomEarned(settings.rateFull);
+      setHoursStr(String(settings.fullShiftHours));
+      setEarnedStr(String(settings.rateFull));
     } else if (newType === 'half') {
       setCustomHours(settings.halfShiftHours);
       setCustomEarned(settings.rateHalf);
+      setHoursStr(String(settings.halfShiftHours));
+      setEarnedStr(String(settings.rateHalf));
     } else {
       setCustomHours(0);
       setCustomEarned(0);
+      setHoursStr('0');
+      setEarnedStr('0');
     }
+  };
+
+  const adjustHours = (delta: number) => {
+    hapticFeedback('light');
+    const nextVal = Math.max(1, Math.min(24, customHours + delta));
+    setCustomHours(nextVal);
+    setHoursStr(String(nextVal));
+  };
+
+  const adjustEarned = (delta: number) => {
+    hapticFeedback('light');
+    const nextVal = Math.max(0, customEarned + delta);
+    setCustomEarned(nextVal);
+    setEarnedStr(String(nextVal));
   };
 
   const handleSave = () => {
@@ -197,34 +223,80 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
           </div>
         )}
 
-        {/* Custom Hours & Earned Amount */}
+        {/* Custom Hours & Earned Amount with steppers and decimal inputs */}
         {shiftType !== 'off' && (
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+            <div className="p-2.5 rounded-2xl bg-slate-800/80 border border-slate-700">
+              <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                 Часов за смену:
               </label>
-              <input
-                type="number"
-                min="1"
-                max="24"
-                value={customHours}
-                onChange={(e) => setCustomHours(Number(e.target.value))}
-                className="w-full p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-white focus:outline-none focus:border-emerald-500"
-              />
+              <div className="flex items-center gap-1 bg-slate-900/90 rounded-xl p-1 border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => adjustHours(-1)}
+                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={hoursStr}
+                  onChange={(e) => {
+                    setHoursStr(e.target.value);
+                    const n = parseInt(e.target.value, 10);
+                    if (!isNaN(n) && n > 0 && n <= 24) setCustomHours(n);
+                  }}
+                  onBlur={() => {
+                    if (hoursStr.trim() === '') setHoursStr(String(customHours));
+                  }}
+                  className="w-full text-center bg-transparent text-sm font-bold text-white focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustHours(1)}
+                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-400 block mb-1">
-                Оплата за этот день ({settings.currency}):
+            <div className="p-2.5 rounded-2xl bg-slate-800/80 border border-slate-700">
+              <label className="text-[11px] font-semibold text-emerald-400 block mb-1">
+                Оплата ({settings.currency}):
               </label>
-              <input
-                type="number"
-                min="0"
-                value={customEarned}
-                onChange={(e) => setCustomEarned(Number(e.target.value))}
-                className="w-full p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-emerald-400 focus:outline-none focus:border-emerald-500"
-              />
+              <div className="flex items-center gap-1 bg-slate-900/90 rounded-xl p-1 border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => adjustEarned(-10)}
+                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={earnedStr}
+                  onChange={(e) => {
+                    setEarnedStr(e.target.value);
+                    const cleaned = e.target.value.replace(',', '.');
+                    const n = parseFloat(cleaned);
+                    if (!isNaN(n) && n >= 0) setCustomEarned(n);
+                  }}
+                  onBlur={() => {
+                    if (earnedStr.trim() === '') setEarnedStr(String(customEarned));
+                  }}
+                  className="w-full text-center bg-transparent text-sm font-bold text-emerald-400 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => adjustEarned(10)}
+                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         )}

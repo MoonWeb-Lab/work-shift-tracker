@@ -65,9 +65,16 @@ async function main() {
     await settingsBtn.click();
     await wait(400);
 
-    // Capture Settings Modal
+    // Capture Settings Modal (top)
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-modal.png') });
     console.log('📸 Screenshot saved: miniapp-settings-modal.png');
+
+    // Scroll Settings Modal to bottom to see notification buttons and Save CTA
+    const modalContent = page.locator('.overflow-y-auto');
+    await modalContent.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    await wait(300);
+    await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-notifications.png') });
+    console.log('📸 Screenshot saved: miniapp-settings-notifications.png');
 
     console.log('🎉 Mini App test completed with 100% success!');
   } finally {

@@ -1,7 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { UserSettings } from '../types';
-import { hapticFeedback, hapticNotification, sendDataToBot } from '../utils/telegram';
-import { X, Check, Bell, DollarSign, Calendar, Clock, Send, Sun, Moon, Plus, Minus } from 'lucide-react';
+import {
+  hapticFeedback,
+  hapticNotification,
+  sendDirectTelegramMessage,
+  syncDataWithBot,
+  sendDataToBot,
+  WEBAPP_URL,
+} from '../utils/telegram';
+import {
+  X,
+  Check,
+  Bell,
+  DollarSign,
+  Calendar,
+  Clock,
+  Send,
+  Sun,
+  Moon,
+  Plus,
+  Minus,
+  RotateCcw,
+  AlertTriangle,
+  Sparkles,
+} from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,6 +31,20 @@ interface SettingsModalProps {
   settings: UserSettings;
   onSaveSettings: (settings: UserSettings) => void;
 }
+
+const DEFAULT_SETTINGS: UserSettings = {
+  rateFull: 100,
+  rateHalf: 50,
+  currency: 'BYN',
+  fullShiftHours: 12,
+  halfShiftHours: 6,
+  salaryDay: 10,
+  advanceDay: 25,
+  halfDayTimeSlot: '09:00 - 14:00',
+  notificationsEnabled: true,
+  morningReminderTime: '08:00',
+  eveningReminderTime: '21:00',
+};
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -18,6 +54,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [form, setForm] = useState<UserSettings>(settings);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [testSentSuccess, setTestSentSuccess] = useState(false);
+  const [resetConfirmState, setResetConfirmState] = useState(false);
 
   // String buffers for effortless typing on mobile
   const [rateFullStr, setRateFullStr] = useState<string>(String(settings.rateFull));
@@ -35,6 +73,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setHoursHalfStr(String(settings.halfShiftHours));
     setSalaryDayStr(String(settings.salaryDay));
     setAdvanceDayStr(String(settings.advanceDay || 25));
+    setResetConfirmState(false);
   }, [settings, isOpen]);
 
   if (!isOpen) return null;
@@ -84,11 +123,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleSave = () => {
+  // Direct test notification to Telegram chat
+  const handleSendTestNotification = async () => {
+    hapticFeedback('medium');
+    const msg = (
+      `🔔 <b>ТЕСТОВОЕ УВЕДОМЛЕНИЕ О СМЕНЕ</b>\n\n` +
+      `Привет! Это проверка работы уведомлений Счётчика смен.\n\n` +
+      `⚙️ <b>Твоё текущее расписание:</b>\n` +
+      `• 🌅 Утреннее напоминание: <b>${form.morningReminderTime}</b>\n` +
+      `• 🌙 Вечерний отчет: <b>${form.eveningReminderTime}</b>\n` +
+      `• 💰 День зарплаты: <b>${form.salaryDay}-е число месяца</b>\n\n` +
+      `💵 Ставка полной смены: <b>${form.rateFull} ${form.currency}</b>\n` +
+      `Уведомления настроены и активны! ✅`
+    );
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: '📱 Открыть Счётчик',
+            web_app: { url: WEBAPP_URL },
+          },
+        ],
+      ],
+    };
+
+    await sendDirectTelegramMessage(msg, replyMarkup);
+    hapticNotification('success');
+    setTestSentSuccess(true);
+    setTimeout(() => setTestSentSuccess(false), 3000);
+  };
+
+  // Protected Settings Reset
+  const handleResetSettingsClick = () => {
+    if (!resetConfirmState) {
+      hapticFeedback('medium');
+      setResetConfirmState(true);
+      setTimeout(() => setResetConfirmState(false), 4500);
+    } else {
+      hapticFeedback('heavy');
+      setForm(DEFAULT_SETTINGS);
+      setRateFullStr(String(DEFAULT_SETTINGS.rateFull));
+      setRateHalfStr(String(DEFAULT_SETTINGS.rateHalf));
+      setHoursFullStr(String(DEFAULT_SETTINGS.fullShiftHours));
+      setHoursHalfStr(String(DEFAULT_SETTINGS.halfShiftHours));
+      setSalaryDayStr(String(DEFAULT_SETTINGS.salaryDay));
+      setAdvanceDayStr(String(DEFAULT_SETTINGS.advanceDay));
+      setResetConfirmState(false);
+      hapticNotification('success');
+
+      // Auto-save & sync defaults
+      onSaveSettings(DEFAULT_SETTINGS);
+      syncDataWithBot(DEFAULT_SETTINGS);
+    }
+  };
+
+  const handleSave = async () => {
     hapticFeedback('medium');
     onSaveSettings(form);
     
-    // Send updated settings to Telegram Bot
+    // 1. Direct sync with bot's shifts.db via Bot API
+    await syncDataWithBot(form);
+
+    // 2. Fallback to Telegram WebApp sendData
     sendDataToBot({
       type: 'settings_update',
       settings: form,
@@ -414,7 +511,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* 4. Bot Notifications (Perfect Symmetrical Layout) */}
+        {/* 4. Bot Notifications (Pixel-Perfect Symmetrical Grid) */}
         <div className="pt-2 border-t border-slate-800">
           <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700/80 space-y-3.5">
             {/* Toggle Header Row */}
@@ -428,12 +525,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Уведомления в Telegram
                   </div>
                   <div className="text-[11px] text-slate-400 leading-tight">
-                    Напоминания о сменах и дне зарплаты
+                    Напоминания о сменах и зарплате
                   </div>
                 </div>
               </div>
 
-              {/* Custom smooth iOS switch */}
+              {/* iOS switch */}
               <button
                 type="button"
                 role="switch"
@@ -456,27 +553,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Symmetrical Time Cards */}
             {form.notificationsEnabled && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-700/60 animate-fadeIn">
-                {/* Morning Reminder Card */}
+              <div className="space-y-3 pt-2 border-t border-slate-700/60 animate-fadeIn">
+                {/* Morning Reminder Section */}
                 <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/80 space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
-                    <Sun className="w-4 h-4 text-amber-400" />
-                    <span>Утро перед сменой:</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    Предупредит о выходе на работу
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-300">
+                      <Sun className="w-4 h-4 text-amber-400" />
+                      <span>Утро перед сменой:</span>
+                    </div>
+                    <span className="text-xs font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                      {form.morningReminderTime}
+                    </span>
                   </div>
 
-                  <input
-                    type="time"
-                    value={form.morningReminderTime}
-                    onChange={(e) => setForm({ ...form, morningReminderTime: e.target.value })}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-white text-center focus:outline-none focus:border-amber-400 cursor-pointer"
-                  />
-
-                  {/* Quick Preset Pills */}
-                  <div className="flex items-center justify-between gap-1 pt-1">
-                    {['07:30', '08:00', '08:30'].map((time) => (
+                  {/* Symmetrical 5-button segmented row */}
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {['07:00', '07:30', '08:00', '08:30', '09:00'].map((time) => (
                       <button
                         key={time}
                         type="button"
@@ -484,10 +576,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           hapticFeedback('light');
                           setForm({ ...form, morningReminderTime: time });
                         }}
-                        className={`flex-1 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                        className={`h-8 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer flex items-center justify-center ${
                           form.morningReminderTime === time
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                            : 'bg-slate-800 text-slate-400 border-slate-700/60 hover:text-white'
+                            ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-sm'
+                            : 'bg-slate-800 text-slate-400 border-slate-700/70 hover:text-white'
                         }`}
                       >
                         {time}
@@ -496,26 +588,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Evening Reminder Card */}
+                {/* Evening Reminder Section */}
                 <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700/80 space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300">
-                    <Moon className="w-4 h-4 text-sky-400" />
-                    <span>Вечерний отчет:</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    Итог заработка за день
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300">
+                      <Moon className="w-4 h-4 text-sky-400" />
+                      <span>Вечерний отчет:</span>
+                    </div>
+                    <span className="text-xs font-extrabold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20">
+                      {form.eveningReminderTime}
+                    </span>
                   </div>
 
-                  <input
-                    type="time"
-                    value={form.eveningReminderTime}
-                    onChange={(e) => setForm({ ...form, eveningReminderTime: e.target.value })}
-                    className="w-full py-2 px-3 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-white text-center focus:outline-none focus:border-sky-400 cursor-pointer"
-                  />
-
-                  {/* Quick Preset Pills */}
-                  <div className="flex items-center justify-between gap-1 pt-1">
-                    {['20:00', '21:00', '22:00'].map((time) => (
+                  {/* Symmetrical 5-button segmented row */}
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {['19:00', '20:00', '21:00', '21:30', '22:00'].map((time) => (
                       <button
                         key={time}
                         type="button"
@@ -523,10 +610,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           hapticFeedback('light');
                           setForm({ ...form, eveningReminderTime: time });
                         }}
-                        className={`flex-1 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                        className={`h-8 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer flex items-center justify-center ${
                           form.eveningReminderTime === time
-                            ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                            : 'bg-slate-800 text-slate-400 border-slate-700/60 hover:text-white'
+                            ? 'bg-sky-500 text-slate-950 font-black border-sky-400 shadow-sm'
+                            : 'bg-slate-800 text-slate-400 border-slate-700/70 hover:text-white'
                         }`}
                       >
                         {time}
@@ -534,13 +621,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     ))}
                   </div>
                 </div>
+
+                {/* Send Test Notification Button */}
+                <button
+                  type="button"
+                  onClick={handleSendTestNotification}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 active:scale-95 text-teal-300 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
+                >
+                  {testSentSuccess ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span className="text-emerald-300">Тестовое уведомление доставлено в Telegram!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-teal-400" />
+                      <span>Отправить тестовое уведомление в бот сейчас</span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Save CTA */}
-        <div className="pt-2">
+        {/* Save CTA & Reset Settings Button */}
+        <div className="space-y-2 pt-2">
           <button
             type="button"
             onClick={handleSave}
@@ -549,12 +655,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {savedSuccess ? (
               <>
                 <Check className="w-5 h-5 text-emerald-200" />
-                <span>Настройки сохранены!</span>
+                <span>Настройки сохранены и синхронизированы!</span>
               </>
             ) : (
               <>
                 <Send className="w-4 h-4" />
                 <span>Сохранить и применить</span>
+              </>
+            )}
+          </button>
+
+          {/* Protected Reset Settings Button */}
+          <button
+            type="button"
+            onClick={handleResetSettingsClick}
+            className={`w-full py-2.5 px-4 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              resetConfirmState
+                ? 'bg-rose-950/70 border-rose-600 text-rose-200 animate-pulse'
+                : 'bg-transparent border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700'
+            }`}
+          >
+            {resetConfirmState ? (
+              <>
+                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                <span>Нажмите еще раз, чтобы подтвердить сброс настроек</span>
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Сбросить все настройки к начальным</span>
               </>
             )}
           </button>

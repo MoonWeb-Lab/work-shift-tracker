@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ShiftEntry, UserSettings, MonthStats } from './types';
-import { initTelegramApp, hapticFeedback } from './utils/telegram';
+import { ShiftEntry, ShiftType, UserSettings, MonthStats } from './types';
+import { initTelegramApp, hapticFeedback, syncDataWithBot } from './utils/telegram';
 import { Header } from './components/Header';
 import { SalaryCounters } from './components/SalaryCounters';
 import { ShiftCalendar } from './components/ShiftCalendar';
@@ -45,12 +45,11 @@ export function App() {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     
-    // Default demo shifts for current month
+    // Default initial shifts for current month
     const demo: Record<string, ShiftEntry> = {};
     const now = new Date();
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, '0');
-    // Pre-populate a few realistic shifts
     demo[`${y}-${m}-02`] = { date: `${y}-${m}-02`, type: 'full', hours: 12, earned: 100 };
     demo[`${y}-${m}-03`] = { date: `${y}-${m}-03`, type: 'full', hours: 12, earned: 100 };
     demo[`${y}-${m}-06`] = { date: `${y}-${m}-06`, type: 'half', hours: 6, halfDayTime: '09:00 - 14:00', earned: 50 };
@@ -62,6 +61,31 @@ export function App() {
   useEffect(() => {
     initTelegramApp();
   }, []);
+
+  // Listen for shifts passed from bot's "➕ Быстрая смена"
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shiftSync = params.get('shift_sync');
+    if (shiftSync) {
+      const [date, type] = shiftSync.split(':');
+      if (date && type) {
+        setShifts((prev) => {
+          const next = { ...prev };
+          if (type === 'off') {
+            delete next[date];
+          } else {
+            next[date] = {
+              date,
+              type: type as ShiftType,
+              hours: type === 'full' ? settings.fullShiftHours : settings.halfShiftHours,
+              earned: type === 'full' ? settings.rateFull : settings.rateHalf,
+            };
+          }
+          return next;
+        });
+      }
+    }
+  }, [settings]);
 
   // Save settings on update
   useEffect(() => {
@@ -76,6 +100,14 @@ export function App() {
       localStorage.setItem('shift_tracker_shifts', JSON.stringify(shifts));
     } catch (e) {}
   }, [shifts]);
+
+  // Background auto-sync with bot shifts.db (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      syncDataWithBot(settings, shifts);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [shifts, settings]);
 
   // Toggle shift on calendar tap (off -> full -> half -> off)
   const handleToggleShift = (dateStr: string) => {
@@ -129,6 +161,21 @@ export function App() {
     });
   };
 
+  // Safe Month Shifts Clear
+  const handleClearMonthShifts = (yearMonthStr: string) => {
+    setShifts((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        if (k.startsWith(yearMonthStr)) {
+          delete next[k];
+        }
+      }
+      return next;
+    });
+    // Sync clear action to bot
+    syncDataWithBot(undefined, undefined, 'clear_month', { year_month: yearMonthStr });
+  };
+
   // Compute stats for current viewed month
   const stats: MonthStats = useMemo(() => {
     const year = currentDate.getFullYear();
@@ -159,63 +206,59 @@ export function App() {
         // Earned so far vs projected
         if (isCurrentMonth) {
           if (d <= todayDayNum) {
-            totalEarned += entry.earned || 0;
+            totalEarned += entry.earned;
           }
-        } else if (currentDate < today) {
-          totalEarned += entry.earned || 0;
+          projectedSalary += entry.earned;
+        } else {
+          totalEarned += entry.earned;
+          projectedSalary += entry.earned;
         }
-
-        projectedSalary += entry.earned || 0;
       } else {
         offDaysCount++;
       }
     }
 
-    // Days to salary
+    // Days to next salary
     let daysToSalary = 0;
-    let remainingShiftsToSalary = 0;
-
+    const targetDay = settings.salaryDay;
     if (isCurrentMonth) {
-      if (todayDayNum <= settings.salaryDay) {
-        daysToSalary = settings.salaryDay - todayDayNum;
-        // Count planned shifts between today and salaryDay
-        for (let d = todayDayNum; d <= settings.salaryDay; d++) {
-          const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          if (shifts[dStr] && shifts[dStr].type !== 'off') {
-            remainingShiftsToSalary++;
-          }
-        }
+      if (todayDayNum <= targetDay) {
+        daysToSalary = targetDay - todayDayNum;
       } else {
-        // Next month salary
-        const daysRemainingThisMonth = daysInMonth - todayDayNum;
-        daysToSalary = daysRemainingThisMonth + settings.salaryDay;
-        // Count remaining this month
-        for (let d = todayDayNum; d <= daysInMonth; d++) {
-          const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-          if (shifts[dStr] && shifts[dStr].type !== 'off') {
-            remainingShiftsToSalary++;
-          }
+        daysToSalary = (daysInMonth - todayDayNum) + targetDay;
+      }
+    } else {
+      daysToSalary = targetDay;
+    }
+
+    // Remaining shifts to salary date
+    let remainingShiftsToSalary = 0;
+    if (isCurrentMonth) {
+      for (let d = todayDayNum; d <= (todayDayNum <= targetDay ? targetDay : daysInMonth); d++) {
+        const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const entry = shifts[dStr];
+        if (entry && entry.type !== 'off') {
+          remainingShiftsToSalary++;
         }
       }
     }
 
-    // Weekly calculations (current week Monday to Sunday)
+    // Calculate weekly metrics
     let weekEarned = 0;
     let weekShiftsRemaining = 0;
-
-    const currentDayOfWeek = today.getDay() === 0 ? 7 : today.getDay(); // 1 = Mon ... 7 = Sun
+    const dayOfWeek = today.getDay();
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     const monday = new Date(today);
-    monday.setDate(today.getDate() - (currentDayOfWeek - 1));
+    monday.setDate(today.getDate() + mondayOffset);
 
     for (let i = 0; i < 7; i++) {
-      const day = new Date(monday);
-      day.setDate(monday.getDate() + i);
-      const dStr = day.toISOString().split('T')[0];
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dStr = d.toISOString().split('T')[0];
       const entry = shifts[dStr];
-
       if (entry && entry.type !== 'off') {
-        if (i < currentDayOfWeek) {
-          weekEarned += entry.earned || 0;
+        if (d <= today) {
+          weekEarned += entry.earned;
         } else {
           weekShiftsRemaining++;
         }
@@ -229,71 +272,43 @@ export function App() {
       halfShiftsCount,
       offDaysCount,
       totalHours,
-      remainingShiftsToSalary,
       daysToSalary,
+      remainingShiftsToSalary,
       weekEarned,
       weekShiftsRemaining,
     };
   }, [currentDate, shifts, settings]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col max-w-lg mx-auto pb-16">
-      {/* 1. Top Header */}
-      <Header onOpenSettings={() => setSettingsModalOpen(true)} />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto shadow-2xl relative pb-20 select-none">
+      {/* Top Header */}
+      <Header
+        onOpenSettings={() => setSettingsModalOpen(true)}
+      />
 
-      {/* 2. Top Tab Switcher */}
-      <div className="px-4 pt-3">
-        <div className="p-1 bg-slate-900 border border-slate-800 rounded-2xl grid grid-cols-2 gap-1 text-xs font-bold">
-          <button
-            onClick={() => {
-              hapticFeedback('light');
-              setActiveTab('calendar');
-            }}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'calendar'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span>График и Смены</span>
-          </button>
+      {/* Main Content Area */}
+      <main className="flex-1 space-y-4 pt-1">
+        {/* Top Salary Summary Cards */}
+        <SalaryCounters
+          stats={stats}
+          settings={settings}
+        />
 
-          <button
-            onClick={() => {
-              hapticFeedback('light');
-              setActiveTab('stats');
-            }}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'stats'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/40'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Аналитика и ЗП</span>
-          </button>
-        </div>
-      </div>
+        {/* Tab 1: Calendar View */}
+        {activeTab === 'calendar' && (
+          <ShiftCalendar
+            currentDate={currentDate}
+            onMonthChange={setCurrentDate}
+            shifts={shifts}
+            onToggleShift={handleToggleShift}
+            onOpenDayDetails={(dateStr) => setSelectedDayDetailsDate(dateStr)}
+            onClearMonthShifts={handleClearMonthShifts}
+            settings={settings}
+          />
+        )}
 
-      {/* 3. Main Body */}
-      <main className="flex-1">
-        {activeTab === 'calendar' ? (
-          <>
-            {/* Live Counters */}
-            <SalaryCounters stats={stats} settings={settings} />
-
-            {/* Shift Calendar */}
-            <ShiftCalendar
-              currentDate={currentDate}
-              onMonthChange={setCurrentDate}
-              shifts={shifts}
-              onToggleShift={handleToggleShift}
-              onOpenDayDetails={setSelectedDayDetailsDate}
-              settings={settings}
-            />
-          </>
-        ) : (
+        {/* Tab 2: Analytics & Salary Breakdown */}
+        {activeTab === 'stats' && (
           <StatsView
             stats={stats}
             settings={settings}

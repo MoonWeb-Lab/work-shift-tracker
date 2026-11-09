@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { MonthStats, UserSettings, ShiftEntry } from '../types';
-import { hapticFeedback, sendDataToBot, hapticNotification } from '../utils/telegram';
-import { Send, CheckCircle2, Clock } from 'lucide-react';
+import {
+  hapticFeedback,
+  hapticNotification,
+  sendDirectTelegramMessage,
+  syncDataWithBot,
+  sendDataToBot,
+  WEBAPP_URL,
+} from '../utils/telegram';
+import { Send, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 
 interface StatsViewProps {
   stats: MonthStats;
@@ -16,7 +23,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
   shifts,
   currentDate,
 }) => {
-  const [sentReport, setSentReport] = React.useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sentReport, setSentReport] = useState(false);
 
   const monthName = currentDate.toLocaleDateString('ru-RU', {
     month: 'long',
@@ -27,9 +35,42 @@ export const StatsView: React.FC<StatsViewProps> = ({
     return val.toLocaleString('ru-RU') + ' ' + settings.currency;
   };
 
-  const handleSendReportToBot = () => {
+  const handleSendReportToBot = async () => {
     hapticFeedback('medium');
-    const reportData = {
+    setIsSending(true);
+
+    const reportHtml = (
+      `📊 <b>Сводка смен и зарплаты за ${monthName}</b>\n\n` +
+      `💰 <b>Фактически заработано:</b> <code>${formatMoney(stats.totalEarned)}</code>\n` +
+      `📈 <b>Прогноз к зарплате:</b> <code>${formatMoney(stats.projectedSalary)}</code>\n\n` +
+      `📋 <b>Отработанное время:</b>\n` +
+      `• Полных смен (${settings.fullShiftHours} ч): <b>${stats.fullShiftsCount}</b>\n` +
+      `• Смен на полдня (${settings.halfDayTimeSlot || `${settings.halfShiftHours} ч`}): <b>${stats.halfShiftsCount}</b>\n` +
+      `• Всего отработано часов: <b>${stats.totalHours} ч</b>\n` +
+      `• Выходных дней: <b>${stats.offDaysCount}</b>\n\n` +
+      `⏳ <b>До зарплаты (${settings.salaryDay}-е число):</b> осталось <b>${stats.daysToSalary} дней</b> (${stats.remainingShiftsToSalary} смен)\n\n` +
+      `✅ <i>Данные из Mini App успешно занесены в память бота!</i>`
+    );
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: '📱 Открыть Счётчик (Mini App)',
+            web_app: { url: WEBAPP_URL },
+          },
+        ],
+      ],
+    };
+
+    // 1. Direct Telegram Bot API message (always works, instant ping on phone)
+    await sendDirectTelegramMessage(reportHtml, replyMarkup);
+
+    // 2. Synchronize shifts with shifts.db so bot scheduler and /status know everything
+    await syncDataWithBot(settings, shifts);
+
+    // 3. Fallback to tg.sendData if running via ReplyKeyboard
+    sendDataToBot({
       type: 'monthly_report',
       month: monthName,
       stats: {
@@ -41,17 +82,12 @@ export const StatsView: React.FC<StatsViewProps> = ({
         daysToSalary: stats.daysToSalary,
         remainingShifts: stats.remainingShiftsToSalary,
       },
-      shiftsCount: Object.keys(shifts).length,
-    };
+    });
 
-    const sent = sendDataToBot(reportData);
-    if (sent) {
-      hapticNotification('success');
-      setSentReport(true);
-      setTimeout(() => setSentReport(false), 2500);
-    } else {
-      alert(`Сводка готова для бота:\nЗаработано: ${formatMoney(stats.totalEarned)}\nПрогноз: ${formatMoney(stats.projectedSalary)}\nСмен: ${stats.fullShiftsCount + stats.halfShiftsCount}`);
-    }
+    setIsSending(false);
+    hapticNotification('success');
+    setSentReport(true);
+    setTimeout(() => setSentReport(false), 3500);
   };
 
   return (
@@ -150,16 +186,22 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Send Report CTA */}
+      {/* Send Report CTA with guaranteed Direct Bot API delivery */}
       <div className="pt-2">
         <button
           onClick={handleSendReportToBot}
-          className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 active:scale-95 text-white font-bold text-sm shadow-xl shadow-teal-950/40 flex items-center justify-center gap-2 cursor-pointer transition-all"
+          disabled={isSending}
+          className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 active:scale-95 text-white font-bold text-sm shadow-xl shadow-teal-950/40 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-60"
         >
-          {sentReport ? (
+          {isSending ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin text-white" />
+              <span>Отправка отчета в Telegram...</span>
+            </>
+          ) : sentReport ? (
             <>
               <CheckCircle2 className="w-5 h-5 text-emerald-200" />
-              <span>Отчёт отправлен в чат Telegram!</span>
+              <span>Отчёт успешно отправлен в бот! ✅</span>
             </>
           ) : (
             <>

@@ -42,21 +42,32 @@ async function main() {
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-calendar-view.png') });
     console.log('📸 Screenshot saved: miniapp-calendar-view.png');
 
-    // 2. Click a calendar day to toggle
-    const todayNum = new Date().getDate();
-    const dayBtn = page.locator(`.grid-cols-7 > div:has-text("${todayNum}")`).first();
-    if (await dayBtn.isVisible()) {
-      await dayBtn.click();
+    // 2. Test Clear Month Shifts Protected Modal
+    const clearBtn = page.locator('button:has-text("Очистить смены за")');
+    if (await clearBtn.isVisible()) {
+      await clearBtn.click();
       await wait(300);
-      console.log('✅ Shift toggled on calendar');
+      await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-clear-modal.png') });
+      console.log('📸 Screenshot saved: miniapp-clear-modal.png');
+      // Cancel modal
+      await page.locator('button:has-text("Отмена")').click();
+      await wait(300);
+      console.log('✅ Clear modal dismissed safely');
     }
 
     // 3. Switch to Analytics Tab
-    const statsTabBtn = page.locator('button:has-text("Аналитика и ЗП")').first();
+    const statsTabBtn = page.locator('nav button:has-text("Зарплата")');
     await statsTabBtn.click();
     await wait(400);
 
-    // Capture Analytics view
+    // Click "Отправить отчёт в бота Telegram"
+    const sendReportBtn = page.locator('button:has-text("Отправить отчёт в бота Telegram")');
+    if (await sendReportBtn.isVisible()) {
+      await sendReportBtn.click();
+      await wait(1200);
+    }
+
+    // Capture Analytics view with sent confirmation
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-stats-view.png') });
     console.log('📸 Screenshot saved: miniapp-stats-view.png');
 
@@ -69,10 +80,10 @@ async function main() {
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-modal.png') });
     console.log('📸 Screenshot saved: miniapp-settings-modal.png');
 
-    // Scroll Settings Modal to bottom to see notification buttons and Save CTA
+    // Scroll Settings Modal to bottom to see notification buttons and Reset CTA
     const modalContent = page.locator('.overflow-y-auto');
     await modalContent.evaluate((el) => { el.scrollTop = el.scrollHeight; });
-    await wait(300);
+    await wait(400);
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-notifications.png') });
     console.log('📸 Screenshot saved: miniapp-settings-notifications.png');
 

@@ -27,9 +27,19 @@ def init_db():
         advance_day INTEGER DEFAULT 25,
         half_day_slot TEXT DEFAULT '09:00 - 14:00',
         notifications_enabled INTEGER DEFAULT 1,
+        morning_reminder_time TEXT DEFAULT '08:00',
+        evening_reminder_time TEXT DEFAULT '21:00',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     """)
+
+    # Check and add columns if upgrading existing db
+    cursor.execute("PRAGMA table_info(users)")
+    cols = [r['name'] for r in cursor.fetchall()]
+    if 'morning_reminder_time' not in cols:
+      cursor.execute("ALTER TABLE users ADD COLUMN morning_reminder_time TEXT DEFAULT '08:00'")
+    if 'evening_reminder_time' not in cols:
+      cursor.execute("ALTER TABLE users ADD COLUMN evening_reminder_time TEXT DEFAULT '21:00'")
 
     # Shifts table
     cursor.execute("""
@@ -91,6 +101,35 @@ def record_shift(user_id: int, date_str: str, shift_type: str, hours: float, ear
           earned = excluded.earned,
           note = excluded.note
       """, (user_id, date_str, shift_type, hours, earned, note))
+    conn.commit()
+
+def bulk_sync_user_shifts(user_id: int, shifts_dict: Dict[str, Any]):
+  """Saves multiple shifts from Mini App into shifts.db"""
+  with get_connection() as conn:
+    cursor = conn.cursor()
+    for date_str, s in shifts_dict.items():
+      stype = s.get('type', 'off')
+      if stype == 'off':
+        cursor.execute("DELETE FROM shifts WHERE user_id = ? AND date = ?", (user_id, date_str))
+      else:
+        hours = float(s.get('hours', 12.0))
+        earned = float(s.get('earned', 0.0))
+        note = s.get('note', '') or ''
+        cursor.execute("""
+          INSERT INTO shifts (user_id, date, shift_type, hours, earned, note)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(user_id, date) DO UPDATE SET
+            shift_type = excluded.shift_type,
+            hours = excluded.hours,
+            earned = excluded.earned,
+            note = excluded.note
+        """, (user_id, date_str, stype, hours, earned, note))
+    conn.commit()
+
+def clear_user_month_shifts(user_id: int, year_month: str):
+  with get_connection() as conn:
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM shifts WHERE user_id = ? AND date LIKE ?", (user_id, f"{year_month}%"))
     conn.commit()
 
 def get_user_month_shifts(user_id: int, year_month: str) -> List[Dict[str, Any]]:

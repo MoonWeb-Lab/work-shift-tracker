@@ -1,74 +1,86 @@
 import logging
 from datetime import datetime, timedelta
+import zoneinfo
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import database as db
 
 logger = logging.getLogger(__name__)
 
-async def check_morning_shifts(bot: Bot):
-  """Called every morning at 08:00"""
-  today_str = datetime.now().strftime('%Y-%m-%d')
+# Minsk timezone
+MINSK_TZ = zoneinfo.ZoneInfo("Europe/Minsk")
+
+async def check_minutely_reminders(bot: Bot):
+  """Checks every minute whether any user has a scheduled morning or evening reminder right now"""
+  now = datetime.now(MINSK_TZ)
+  current_hm = now.strftime('%H:%M')
+  today_str = now.strftime('%Y-%m-%d')
   users = db.get_all_active_users()
 
   for u in users:
     uid = u['user_id']
-    shift = db.get_shift_for_date(uid, today_str)
+    m_time = u.get('morning_reminder_time') or '08:00'
+    e_time = u.get('evening_reminder_time') or '21:00'
     curr = u['currency']
 
-    try:
+    # 1. Check Morning Shift Reminder
+    if current_hm == m_time:
+      shift = db.get_shift_for_date(uid, today_str)
       if shift and shift['shift_type'] == 'full':
-        await bot.send_message(
-          chat_id=uid,
-          text=(
-            f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
-            f"Сегодня у тебя запланирована <b>полная смена</b> ({shift['hours']} ч).\n"
-            f"💰 Оплата за смену: <b>{shift['earned']} {curr}</b>\n\n"
-            f"Хорошего и продуктивного рабочего дня! 💪"
-          ),
-          parse_mode="HTML"
-        )
+        try:
+          await bot.send_message(
+            chat_id=uid,
+            text=(
+              f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
+              f"Сегодня у тебя запланирована <b>полная смена</b> ({shift['hours']:.0f} ч).\n"
+              f"💰 Оплата за смену: <b>+{shift['earned']:.0f} {curr}</b>\n\n"
+              f"Хорошего и продуктивного рабочего дня! 💪"
+            ),
+            parse_mode="HTML"
+          )
+          logger.info(f"Morning shift notification sent to {uid}")
+        except Exception as e:
+          logger.warning(f"Failed morning alert to {uid}: {e}")
+
       elif shift and shift['shift_type'] == 'half':
         slot = u.get('half_day_slot', '09:00 - 14:00')
-        await bot.send_message(
-          chat_id=uid,
-          text=(
-            f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
-            f"Сегодня у тебя смена <b>на полдня</b> ({shift['hours']} ч).\n"
-            f"⏰ Время выхода: <b>{slot}</b>\n"
-            f"💰 Оплата за смену: <b>{shift['earned']} {curr}</b>\n\n"
-            f"Лёгкой и спокойной смены! ☕"
-          ),
-          parse_mode="HTML"
-        )
-    except Exception as e:
-      logger.warning(f"Failed to send morning notification to {uid}: {e}")
+        try:
+          await bot.send_message(
+            chat_id=uid,
+            text=(
+              f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
+              f"Сегодня у тебя смена <b>на полдня</b> ({shift['hours']:.0f} ч).\n"
+              f"⏰ Время выхода: <b>{slot}</b>\n"
+              f"💰 Оплата за смену: <b>+{shift['earned']:.0f} {curr}</b>\n\n"
+              f"Лёгкой и спокойной смены! ☕"
+            ),
+            parse_mode="HTML"
+          )
+          logger.info(f"Morning half-day notification sent to {uid}")
+        except Exception as e:
+          logger.warning(f"Failed morning alert to {uid}: {e}")
 
-async def check_evening_reminders(bot: Bot):
-  """Called every evening at 21:00"""
-  today_str = datetime.now().strftime('%Y-%m-%d')
-  users = db.get_all_active_users()
-
-  for u in users:
-    uid = u['user_id']
-    shift = db.get_shift_for_date(uid, today_str)
-    if shift and shift['shift_type'] in ('full', 'half'):
-      try:
-        await bot.send_message(
-          chat_id=uid,
-          text=(
-            f"💼 <b>Смена подошла к концу!</b>\n\n"
-            f"За сегодняшний день заработано: <b>+{shift['earned']} {u['currency']}</b>.\n"
-            f"Смена учтена в общем табеле зарплаты. Отличного вечера и приятного отдыха! 🌙"
-          ),
-          parse_mode="HTML"
-        )
-      except Exception as e:
-        logger.warning(f"Failed to send evening reminder to {uid}: {e}")
+    # 2. Check Evening Checkout Reminder
+    if current_hm == e_time:
+      shift = db.get_shift_for_date(uid, today_str)
+      if shift and shift['shift_type'] in ('full', 'half'):
+        try:
+          await bot.send_message(
+            chat_id=uid,
+            text=(
+              f"💼 <b>Смена подошла к концу!</b>\n\n"
+              f"За сегодняшний день заработано: <b>+{shift['earned']:.0f} {curr}</b>.\n"
+              f"Смена учтена в табеле зарплаты. Приятного вечера и отличного отдыха! 🌙"
+            ),
+            parse_mode="HTML"
+          )
+          logger.info(f"Evening notification sent to {uid}")
+        except Exception as e:
+          logger.warning(f"Failed evening alert to {uid}: {e}")
 
 async def check_salary_notifications(bot: Bot):
   """Called daily at 09:30 to check for salary day"""
-  now = datetime.now()
+  now = datetime.now(MINSK_TZ)
   today_day = now.day
   ym = now.strftime('%Y-%m')
   users = db.get_all_active_users()
@@ -101,7 +113,7 @@ async def check_salary_notifications(bot: Bot):
           parse_mode="HTML"
         )
       except Exception as e:
-        logger.warning(f"Failed to send salary notification to {uid}: {e}")
+        logger.warning(f"Failed salary notification to {uid}: {e}")
 
     # 2. Day Before Salary Alert
     elif (salary_day > 1 and today_day == salary_day - 1) or (salary_day == 1 and now.day == 28):
@@ -118,20 +130,17 @@ async def check_salary_notifications(bot: Bot):
           parse_mode="HTML"
         )
       except Exception as e:
-        logger.warning(f"Failed to send pre-salary notification to {uid}: {e}")
+        logger.warning(f"Failed pre-salary notification to {uid}: {e}")
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
   scheduler = AsyncIOScheduler(timezone="Europe/Minsk")
   
-  # Morning reminder at 08:00
-  scheduler.add_job(check_morning_shifts, 'cron', hour=8, minute=0, args=[bot])
-  
-  # Evening reminder at 21:00
-  scheduler.add_job(check_evening_reminders, 'cron', hour=21, minute=0, args=[bot])
+  # Run minutely reminder check to match each user's exact chosen morning & evening hours
+  scheduler.add_job(check_minutely_reminders, 'interval', minutes=1, args=[bot])
   
   # Salary day check at 09:30
   scheduler.add_job(check_salary_notifications, 'cron', hour=9, minute=30, args=[bot])
   
   scheduler.start()
-  logger.info("Scheduler started with Minsk timezone")
+  logger.info("Scheduler started with minutely personalized checks (Europe/Minsk)")
   return scheduler

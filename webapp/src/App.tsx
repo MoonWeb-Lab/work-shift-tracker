@@ -16,8 +16,10 @@ const DEFAULT_SETTINGS: UserSettings = {
   fullShiftHours: 12,
   halfShiftHours: 6,
   halfDayTimeSlot: '09:00 - 14:00',
-  salaryDay: 10,
   advanceDay: 25,
+  firstPeriodEnd: 15,
+  salaryDay: 10,
+  secondPeriodStart: 16,
   notificationsEnabled: true,
   morningReminderTime: '08:00',
   eveningReminderTime: '21:00',
@@ -183,6 +185,16 @@ export function App() {
 
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+    const firstCutoff = settings.firstPeriodEnd || 15;
+    const secondCutoff = settings.secondPeriodStart || 16;
+    const firstPayDay = settings.advanceDay || 25;
+    const secondPayDay = settings.salaryDay || 10;
+
+    let advanceEarned = 0;
+    let advanceShiftsCount = 0;
+    let secondPartEarned = 0;
+    let secondPartShiftsCount = 0;
+
     // Iterate through all days of this month
     for (let d = 1; d <= daysInMonth; d++) {
       const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -203,34 +215,85 @@ export function App() {
           totalEarned += entry.earned;
           projectedSalary += entry.earned;
         }
+
+        // Two-part period distribution
+        if (d <= firstCutoff) {
+          advanceEarned += entry.earned;
+          advanceShiftsCount++;
+        } else if (d >= secondCutoff) {
+          secondPartEarned += entry.earned;
+          secondPartShiftsCount++;
+        }
       } else {
         offDaysCount++;
       }
     }
 
-    // Days to next salary
-    let daysToSalary = 0;
-    const targetDay = settings.salaryDay;
-    if (isCurrentMonth) {
-      if (todayDayNum <= targetDay) {
-        daysToSalary = targetDay - todayDayNum;
-      } else {
-        daysToSalary = (daysInMonth - todayDayNum) + targetDay;
+    // Previous month calculation (for second payout on 10th of current month)
+    const prevDate = new Date(year, month - 1, 1);
+    const prevYear = prevDate.getFullYear();
+    const prevMonth = prevDate.getMonth();
+    const lastDayPrev = new Date(prevYear, prevMonth + 1, 0).getDate();
+    let previousMonthSecondPartEarned = 0;
+    for (let d = secondCutoff; d <= lastDayPrev; d++) {
+      const dStr = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const entry = shifts[dStr];
+      if (entry && entry.type !== 'off') {
+        previousMonthSecondPartEarned += entry.earned;
       }
-    } else {
-      daysToSalary = targetDay;
     }
 
-    // Remaining shifts to salary date
-    let remainingShiftsToSalary = 0;
+    // Month names for display
+    const currMonthName = currentDate.toLocaleDateString('ru-RU', { month: 'long' });
+    const prevMonthName = prevDate.toLocaleDateString('ru-RU', { month: 'long' });
+
+    // Nearest Payout Logic
+    let nextPayoutName = `Зарплата (${secondPayDay}-е число)`;
+    let nextPayoutDate = secondPayDay;
+    let nextPayoutAmount = 0;
+    let nextPayoutPeriodStr = '';
+    let daysToNextPayout = 0;
+    let remainingShiftsToNextPayout = 0;
+
     if (isCurrentMonth) {
-      for (let d = todayDayNum; d <= (todayDayNum <= targetDay ? targetDay : daysInMonth); d++) {
-        const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        const entry = shifts[dStr];
-        if (entry && entry.type !== 'off') {
-          remainingShiftsToSalary++;
+      if (todayDayNum <= secondPayDay) {
+        // Nearest payout is 10th of current month (for 16-end of prev month)
+        nextPayoutName = `Зарплата (${secondPayDay}-е число)`;
+        nextPayoutDate = secondPayDay;
+        nextPayoutAmount = previousMonthSecondPartEarned;
+        nextPayoutPeriodStr = `за 16–${lastDayPrev} ${prevMonthName}`;
+        daysToNextPayout = secondPayDay - todayDayNum;
+        remainingShiftsToNextPayout = 0;
+      } else if (todayDayNum <= firstPayDay) {
+        // Nearest payout is 25th of current month (for 1-15 of curr month)
+        nextPayoutName = `Аванс (${firstPayDay}-е число)`;
+        nextPayoutDate = firstPayDay;
+        nextPayoutAmount = advanceEarned;
+        nextPayoutPeriodStr = `за 1–${firstCutoff} ${currMonthName}`;
+        daysToNextPayout = firstPayDay - todayDayNum;
+        for (let d = todayDayNum; d <= firstCutoff; d++) {
+          const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          if (shifts[dStr] && shifts[dStr].type !== 'off') remainingShiftsToNextPayout++;
+        }
+      } else {
+        // Passed 25th: next payout is 10th of next month (for 16-end of curr month)
+        nextPayoutName = `Зарплата (${secondPayDay}-е число)`;
+        nextPayoutDate = secondPayDay;
+        nextPayoutAmount = secondPartEarned;
+        nextPayoutPeriodStr = `за ${secondCutoff}–${daysInMonth} ${currMonthName}`;
+        daysToNextPayout = (daysInMonth - todayDayNum) + secondPayDay;
+        for (let d = todayDayNum; d <= daysInMonth; d++) {
+          const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          if (shifts[dStr] && shifts[dStr].type !== 'off') remainingShiftsToNextPayout++;
         }
       }
+    } else {
+      nextPayoutName = `Зарплата (${secondPayDay}-е число)`;
+      nextPayoutDate = secondPayDay;
+      nextPayoutAmount = totalEarned;
+      nextPayoutPeriodStr = `за ${currMonthName}`;
+      daysToNextPayout = secondPayDay;
+      remainingShiftsToNextPayout = 0;
     }
 
     // Calculate weekly metrics
@@ -262,8 +325,19 @@ export function App() {
       halfShiftsCount,
       offDaysCount,
       totalHours,
-      daysToSalary,
-      remainingShiftsToSalary,
+      advanceEarned,
+      advanceShiftsCount,
+      secondPartEarned,
+      secondPartShiftsCount,
+      previousMonthSecondPartEarned,
+      nextPayoutName,
+      nextPayoutDate,
+      nextPayoutAmount,
+      nextPayoutPeriodStr,
+      daysToNextPayout,
+      remainingShiftsToNextPayout,
+      daysToSalary: daysToNextPayout,
+      remainingShiftsToSalary: remainingShiftsToNextPayout,
       weekEarned,
       weekShiftsRemaining,
     };

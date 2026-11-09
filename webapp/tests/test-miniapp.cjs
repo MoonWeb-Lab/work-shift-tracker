@@ -2,7 +2,7 @@ const { chromium } = require('C:/Users/user/.gemini/antigravity/scratch/botanica
 const { spawn } = require('child_process');
 const path = require('path');
 
-const PORT = 4190;
+const PORT = 4192;
 const BASE_URL = `http://127.0.0.1:${PORT}/`;
 const ARTIFACTS_DIR = 'C:/Users/user/.gemini/antigravity/brain/8f960d99-1381-4065-8415-4e88eb8a0d2d';
 
@@ -32,30 +32,13 @@ async function main() {
 
     const page = await context.newPage();
     await page.goto(BASE_URL, { waitUntil: 'networkidle' });
-    await wait(500);
+    await wait(600);
 
-    // 1. Verify title and Header
-    const title = await page.title();
-    console.log('   Title:', title);
-
-    // Capture Calendar view
+    // 1. Capture Calendar view with Salary Banner & Cards
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-calendar-view.png') });
     console.log('📸 Screenshot saved: miniapp-calendar-view.png');
 
-    // 2. Test Clear Month Shifts Protected Modal
-    const clearBtn = page.locator('button:has-text("Очистить смены за")');
-    if (await clearBtn.isVisible()) {
-      await clearBtn.click();
-      await wait(300);
-      await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-clear-modal.png') });
-      console.log('📸 Screenshot saved: miniapp-clear-modal.png');
-      // Cancel modal
-      await page.locator('button:has-text("Отмена")').click();
-      await wait(300);
-      console.log('✅ Clear modal dismissed safely');
-    }
-
-    // 3. Switch to Analytics Tab
+    // 2. Switch to Analytics Tab
     const statsTabBtn = page.locator('nav button:has-text("Зарплата")');
     await statsTabBtn.click();
     await wait(400);
@@ -67,21 +50,27 @@ async function main() {
       await wait(1200);
     }
 
-    // Capture Analytics view with sent confirmation
+    // Capture Analytics view with 2-part salary breakdown
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-stats-view.png') });
     console.log('📸 Screenshot saved: miniapp-stats-view.png');
 
-    // 4. Open Settings Modal
+    // 3. Open Settings Modal
     const settingsBtn = page.locator('nav button:has-text("Настройки")');
     await settingsBtn.click();
     await wait(400);
 
-    // Capture Settings Modal (top)
+    // Capture Settings Modal (top: rates)
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-modal.png') });
     console.log('📸 Screenshot saved: miniapp-settings-modal.png');
 
-    // Scroll Settings Modal to bottom to see notification buttons and Reset CTA
+    // Scroll to 2-part salary payout section
     const modalContent = page.locator('.overflow-y-auto');
+    await modalContent.evaluate((el) => { el.scrollTop = 380; });
+    await wait(400);
+    await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-payouts.png') });
+    console.log('📸 Screenshot saved: miniapp-settings-payouts.png');
+
+    // Scroll Settings Modal to bottom to see notification buttons and Reset CTA
     await modalContent.evaluate((el) => { el.scrollTop = el.scrollHeight; });
     await wait(400);
     await page.screenshot({ path: path.join(ARTIFACTS_DIR, 'miniapp-settings-notifications.png') });

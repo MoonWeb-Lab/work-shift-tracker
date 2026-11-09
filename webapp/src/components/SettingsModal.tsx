@@ -39,11 +39,37 @@ const DEFAULT_SETTINGS: UserSettings = {
   halfShiftHours: 6,
   salaryDay: 10,
   advanceDay: 25,
+  firstPeriodEnd: 15,
+  secondPeriodStart: 16,
   halfDayTimeSlot: '09:00 - 14:00',
   notificationsEnabled: true,
   morningReminderTime: '08:00',
   eveningReminderTime: '21:00',
 };
+
+const PAYOUT_PRESETS = [
+  {
+    name: '25-е и 10-е (Стандарт)',
+    advanceDay: 25,
+    firstPeriodEnd: 15,
+    salaryDay: 10,
+    secondPeriodStart: 16,
+  },
+  {
+    name: '20-е и 5-е',
+    advanceDay: 20,
+    firstPeriodEnd: 15,
+    salaryDay: 5,
+    secondPeriodStart: 16,
+  },
+  {
+    name: '30-е и 15-е',
+    advanceDay: 30,
+    firstPeriodEnd: 15,
+    salaryDay: 15,
+    secondPeriodStart: 16,
+  },
+];
 
 const HALF_DAY_PRESETS = [
   '09:00 - 14:00',
@@ -72,6 +98,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [hoursHalfStr, setHoursHalfStr] = useState<string>(String(settings.halfShiftHours));
   const [salaryDayStr, setSalaryDayStr] = useState<string>(String(settings.salaryDay));
   const [advanceDayStr, setAdvanceDayStr] = useState<string>(String(settings.advanceDay || 25));
+  const [firstPeriodEndStr, setFirstPeriodEndStr] = useState<string>(String(settings.firstPeriodEnd || 15));
+  const [secondPeriodStartStr, setSecondPeriodStartStr] = useState<string>(String(settings.secondPeriodStart || 16));
 
   useEffect(() => {
     setForm(settings);
@@ -81,6 +109,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setHoursHalfStr(String(settings.halfShiftHours));
     setSalaryDayStr(String(settings.salaryDay));
     setAdvanceDayStr(String(settings.advanceDay || 25));
+    setFirstPeriodEndStr(String(settings.firstPeriodEnd || 15));
+    setSecondPeriodStartStr(String(settings.secondPeriodStart || 16));
     setResetConfirmState(false);
   }, [settings, isOpen]);
 
@@ -164,6 +194,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setTestSentSuccess(false), 3000);
   };
 
+  // Payout adjustment helper functions
+  const adjustDayField = (
+    field: 'salaryDay' | 'advanceDay' | 'firstPeriodEnd' | 'secondPeriodStart',
+    delta: number,
+    min: number,
+    max: number
+  ) => {
+    hapticFeedback('light');
+    setForm((prev) => {
+      const current = prev[field] || min;
+      const nextVal = Math.min(max, Math.max(min, current + delta));
+      if (field === 'salaryDay') setSalaryDayStr(String(nextVal));
+      if (field === 'advanceDay') setAdvanceDayStr(String(nextVal));
+      if (field === 'firstPeriodEnd') setFirstPeriodEndStr(String(nextVal));
+      if (field === 'secondPeriodStart') setSecondPeriodStartStr(String(nextVal));
+      return { ...prev, [field]: nextVal };
+    });
+  };
+
+  const applyPayoutPreset = (preset: typeof PAYOUT_PRESETS[0]) => {
+    hapticFeedback('medium');
+    setForm((prev) => ({
+      ...prev,
+      advanceDay: preset.advanceDay,
+      firstPeriodEnd: preset.firstPeriodEnd,
+      salaryDay: preset.salaryDay,
+      secondPeriodStart: preset.secondPeriodStart,
+    }));
+    setAdvanceDayStr(String(preset.advanceDay));
+    setFirstPeriodEndStr(String(preset.firstPeriodEnd));
+    setSalaryDayStr(String(preset.salaryDay));
+    setSecondPeriodStartStr(String(preset.secondPeriodStart));
+  };
+
   // Protected Settings Reset (NO chat spam!)
   const handleResetSettingsClick = () => {
     if (!resetConfirmState) {
@@ -179,6 +243,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setHoursHalfStr(String(DEFAULT_SETTINGS.halfShiftHours));
       setSalaryDayStr(String(DEFAULT_SETTINGS.salaryDay));
       setAdvanceDayStr(String(DEFAULT_SETTINGS.advanceDay));
+      setFirstPeriodEndStr(String(DEFAULT_SETTINGS.firstPeriodEnd));
+      setSecondPeriodStartStr(String(DEFAULT_SETTINGS.secondPeriodStart));
       setResetConfirmState(false);
       hapticNotification('success');
 
@@ -491,56 +557,231 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* 3. Salary & Advance Days */}
+        {/* 3. Two-Part Salary & Payout Configuration */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
-          <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Даты выплат зарплаты и аванса</span>
+          <div>
+            <div className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Схема и даты 2-х выплат ЗП</span>
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">
+              Аванс за 1-ю половину месяца и расчет за 2-ю половину
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                День зарплаты (число):
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={salaryDayStr}
-                onChange={(e) => {
-                  setSalaryDayStr(e.target.value);
-                  const n = parseInt(e.target.value, 10);
-                  if (!isNaN(n) && n >= 1 && n <= 31) {
-                    setForm((prev) => ({ ...prev, salaryDay: n }));
-                  }
-                }}
-                onBlur={() => {
-                  if (salaryDayStr.trim() === '') setSalaryDayStr(String(form.salaryDay));
-                }}
-                className="w-full p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-amber-400 text-center focus:outline-none focus:border-amber-500"
-              />
+          {/* Quick Presets */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {PAYOUT_PRESETS.map((preset) => {
+              const isActive =
+                form.advanceDay === preset.advanceDay &&
+                form.salaryDay === preset.salaryDay &&
+                form.firstPeriodEnd === preset.firstPeriodEnd &&
+                form.secondPeriodStart === preset.secondPeriodStart;
+
+              return (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => applyPayoutPreset(preset)}
+                  className={`py-1.5 px-1.5 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer text-center leading-tight ${
+                    isActive
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
+                      : 'bg-slate-800/80 text-slate-400 border-slate-700/60 hover:text-white'
+                  }`}
+                >
+                  {preset.name}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Card 1: 1-st Payment (Advance / Аванс) */}
+          <div className="p-3 rounded-2xl bg-slate-800/80 border border-teal-500/30 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-teal-400" />
+                <span className="text-xs font-bold text-teal-300">
+                  1-я выплата (Аванс)
+                </span>
+              </div>
+              <span className="text-[10px] text-teal-400/90 font-semibold bg-teal-500/10 px-2 py-0.5 rounded-md border border-teal-500/20">
+                Период: 1–{form.firstPeriodEnd || 15} число
+              </span>
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                День аванса (число):
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={advanceDayStr}
-                onChange={(e) => {
-                  setAdvanceDayStr(e.target.value);
-                  const n = parseInt(e.target.value, 10);
-                  if (!isNaN(n) && n >= 1 && n <= 31) {
-                    setForm((prev) => ({ ...prev, advanceDay: n }));
-                  }
-                }}
-                onBlur={() => {
-                  if (advanceDayStr.trim() === '') setAdvanceDayStr(String(form.advanceDay || 25));
-                }}
-                className="w-full p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm font-bold text-teal-400 text-center focus:outline-none focus:border-amber-500"
-              />
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {/* Payout Day */}
+              <div className="bg-slate-900/90 rounded-xl p-2 border border-slate-700 space-y-1">
+                <span className="text-[10px] text-slate-400 block">День выплаты (число):</span>
+                <div className="flex items-center justify-between gap-1">
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('advanceDay', -1, 1, 31)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={advanceDayStr}
+                    onChange={(e) => {
+                      setAdvanceDayStr(e.target.value);
+                      const n = parseInt(e.target.value, 10);
+                      if (!isNaN(n) && n >= 1 && n <= 31) {
+                        setForm((prev) => ({ ...prev, advanceDay: n }));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (advanceDayStr.trim() === '') setAdvanceDayStr(String(form.advanceDay || 25));
+                    }}
+                    className="w-full text-center bg-transparent text-sm font-black text-teal-300 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('advanceDay', 1, 1, 31)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Period Cutoff */}
+              <div className="bg-slate-900/90 rounded-xl p-2 border border-slate-700 space-y-1">
+                <span className="text-[10px] text-slate-400 block">Конец периода (число):</span>
+                <div className="flex items-center justify-between gap-1">
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('firstPeriodEnd', -1, 1, 30)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={firstPeriodEndStr}
+                    onChange={(e) => {
+                      setFirstPeriodEndStr(e.target.value);
+                      const n = parseInt(e.target.value, 10);
+                      if (!isNaN(n) && n >= 1 && n <= 30) {
+                        setForm((prev) => ({ ...prev, firstPeriodEnd: n }));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (firstPeriodEndStr.trim() === '') setFirstPeriodEndStr(String(form.firstPeriodEnd || 15));
+                    }}
+                    className="w-full text-center bg-transparent text-sm font-black text-teal-300 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('firstPeriodEnd', 1, 1, 30)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 leading-tight">
+              💡 Выплачивается {form.advanceDay}-го числа за отработанные дни с 1 по {form.firstPeriodEnd || 15} текущего месяца.
+            </div>
+          </div>
+
+          {/* Card 2: 2-nd Payment (Main Salary / Основная зарплата) */}
+          <div className="p-3 rounded-2xl bg-slate-800/80 border border-amber-500/30 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                <span className="text-xs font-bold text-amber-300">
+                  2-я выплата (Основная ЗП)
+                </span>
+              </div>
+              <span className="text-[10px] text-amber-400/90 font-semibold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                Период: {form.secondPeriodStart || 16}–конец месяца
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {/* Payout Day */}
+              <div className="bg-slate-900/90 rounded-xl p-2 border border-slate-700 space-y-1">
+                <span className="text-[10px] text-slate-400 block">День зарплаты (число):</span>
+                <div className="flex items-center justify-between gap-1">
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('salaryDay', -1, 1, 31)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={salaryDayStr}
+                    onChange={(e) => {
+                      setSalaryDayStr(e.target.value);
+                      const n = parseInt(e.target.value, 10);
+                      if (!isNaN(n) && n >= 1 && n <= 31) {
+                        setForm((prev) => ({ ...prev, salaryDay: n }));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (salaryDayStr.trim() === '') setSalaryDayStr(String(form.salaryDay || 10));
+                    }}
+                    className="w-full text-center bg-transparent text-sm font-black text-amber-300 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('salaryDay', 1, 1, 31)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Period Start */}
+              <div className="bg-slate-900/90 rounded-xl p-2 border border-slate-700 space-y-1">
+                <span className="text-[10px] text-slate-400 block">Начало периода (число):</span>
+                <div className="flex items-center justify-between gap-1">
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('secondPeriodStart', -1, 2, 31)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={secondPeriodStartStr}
+                    onChange={(e) => {
+                      setSecondPeriodStartStr(e.target.value);
+                      const n = parseInt(e.target.value, 10);
+                      if (!isNaN(n) && n >= 2 && n <= 31) {
+                        setForm((prev) => ({ ...prev, secondPeriodStart: n }));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (secondPeriodStartStr.trim() === '') setSecondPeriodStartStr(String(form.secondPeriodStart || 16));
+                    }}
+                    className="w-full text-center bg-transparent text-sm font-black text-amber-300 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => adjustDayField('secondPeriodStart', 1, 2, 31)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] text-slate-400 leading-tight">
+              💡 Выплачивается {form.salaryDay}-го числа следующего месяца за дни с {form.secondPeriodStart || 16} по конец предыдущего месяца.
             </div>
           </div>
         </div>

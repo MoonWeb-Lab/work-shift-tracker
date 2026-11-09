@@ -25,6 +25,8 @@ def init_db():
         currency TEXT DEFAULT 'BYN',
         salary_day INTEGER DEFAULT 10,
         advance_day INTEGER DEFAULT 25,
+        first_period_end INTEGER DEFAULT 15,
+        second_period_start INTEGER DEFAULT 16,
         half_day_slot TEXT DEFAULT '09:00 - 14:00',
         notifications_enabled INTEGER DEFAULT 1,
         morning_reminder_time TEXT DEFAULT '08:00',
@@ -40,6 +42,10 @@ def init_db():
       cursor.execute("ALTER TABLE users ADD COLUMN morning_reminder_time TEXT DEFAULT '08:00'")
     if 'evening_reminder_time' not in cols:
       cursor.execute("ALTER TABLE users ADD COLUMN evening_reminder_time TEXT DEFAULT '21:00'")
+    if 'first_period_end' not in cols:
+      cursor.execute("ALTER TABLE users ADD COLUMN first_period_end INTEGER DEFAULT 15")
+    if 'second_period_start' not in cols:
+      cursor.execute("ALTER TABLE users ADD COLUMN second_period_start INTEGER DEFAULT 16")
 
     # Shifts table
     cursor.execute("""
@@ -141,6 +147,16 @@ def get_user_month_shifts(user_id: int, year_month: str) -> List[Dict[str, Any]]
       WHERE user_id = ? AND date LIKE ?
       ORDER BY date ASC
     """, (user_id, f"{year_month}%"))
+    return [dict(r) for r in cursor.fetchall()]
+
+def get_user_period_shifts(user_id: int, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+  with get_connection() as conn:
+    cursor = conn.cursor()
+    cursor.execute("""
+      SELECT * FROM shifts
+      WHERE user_id = ? AND date >= ? AND date <= ?
+      ORDER BY date ASC
+    """, (user_id, start_date, end_date))
     return [dict(r) for r in cursor.fetchall()]
 
 def get_shift_for_date(user_id: int, date_str: str) -> Optional[Dict[str, Any]]:

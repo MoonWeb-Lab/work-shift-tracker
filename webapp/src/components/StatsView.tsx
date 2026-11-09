@@ -4,7 +4,6 @@ import {
   hapticFeedback,
   hapticNotification,
   sendDirectTelegramMessage,
-  syncDataWithBot,
   sendDataToBot,
   WEBAPP_URL,
 } from '../utils/telegram';
@@ -20,7 +19,7 @@ interface StatsViewProps {
 export const StatsView: React.FC<StatsViewProps> = ({
   stats,
   settings,
-  shifts,
+  shifts: _shifts,
   currentDate,
 }) => {
   const [isSending, setIsSending] = useState(false);
@@ -66,10 +65,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
     // 1. Direct Telegram Bot API message (always works, instant ping on phone)
     await sendDirectTelegramMessage(reportHtml, replyMarkup);
 
-    // 2. Synchronize shifts with shifts.db so bot scheduler and /status know everything
-    await syncDataWithBot(settings, shifts);
-
-    // 3. Fallback to tg.sendData if running via ReplyKeyboard
+    // 2. Fallback to tg.sendData if running via ReplyKeyboard
     sendDataToBot({
       type: 'monthly_report',
       month: monthName,

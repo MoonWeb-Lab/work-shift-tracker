@@ -273,11 +273,12 @@ async def handle_test_notification(message: Message):
     f"🔔 <b>ТЕСТОВОЕ УВЕДОМЛЕНИЕ ОТ СЧЁТЧИКА:</b>\n\n"
     f"Привет, {message.from_user.first_name or 'друг'}!\n"
     f"✅ Уведомления успешно подключены и работают штатно.\n\n"
+    f"💰 <b>Уже заработано в этом месяце:</b> <code>{total_earned:,.0f} {user['currency']}</code>\n"
+    f"⏳ До дня зарплаты ({user['salary_day']}-е число): <b>{max(0, user['salary_day'] - now.day)} дн.</b>\n\n"
     f"⏰ <b>Твоё расписание напоминаний:</b>\n"
     f"• 🌅 Утро (перед выходом): <b>{m_time}</b>\n"
     f"• 🌙 Вечер (итог дня): <b>{e_time}</b>\n"
-    f"• 💰 День зарплаты: <b>{user['salary_day']}-е число в 09:30</b>\n\n"
-    f"📊 <b>Текущий баланс в табеле:</b> {total_earned:,.0f} {user['currency']}",
+    f"• 💰 День зарплаты: <b>{user['salary_day']}-е число в 09:30</b>",
     parse_mode="HTML",
     reply_markup=InlineKeyboardMarkup(
       inline_keyboard=[[InlineKeyboardButton(text="📱 Открыть Счётчик смен", web_app=WebAppInfo(url=WEBAPP_URL))]]

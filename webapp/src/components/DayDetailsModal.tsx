@@ -197,15 +197,15 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
               <Clock className="w-4 h-4" />
               <span>Время выхода на полдня:</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              {['09:00 - 14:00', '14:00 - 20:00', '10:00 - 15:00', '12:00 - 18:00'].map((preset) => (
+            <div className="grid grid-cols-3 gap-1.5">
+              {['09:00 - 14:00', '14:00 - 20:00', '16:30 - 22:00', '10:00 - 15:00', '12:00 - 18:00', '18:00 - 23:00'].map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => setHalfDayTime(preset)}
-                  className={`py-1.5 px-2 rounded-xl text-xs font-semibold border transition-all ${
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold border transition-all text-center ${
                     halfDayTime === preset
-                      ? 'bg-amber-500 text-slate-950 font-bold border-amber-400'
+                      ? 'bg-amber-500 text-slate-950 font-black border-amber-400 shadow-sm'
                       : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600'
                   }`}
                 >
@@ -215,7 +215,7 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
             </div>
             <input
               type="text"
-              placeholder="Или введите свое время (напр. 15:00 - 21:00)"
+              placeholder="Или введите свое время (напр. 16:30 - 22:00)"
               value={halfDayTime}
               onChange={(e) => setHalfDayTime(e.target.value)}
               className="w-full mt-1 p-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"

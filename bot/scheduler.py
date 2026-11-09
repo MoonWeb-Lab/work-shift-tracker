@@ -15,6 +15,8 @@ async def check_minutely_reminders(bot: Bot):
   now = datetime.now(MINSK_TZ)
   current_hm = now.strftime('%H:%M')
   today_str = now.strftime('%Y-%m-%d')
+  today_day = now.day
+  ym = now.strftime('%Y-%m')
   users = db.get_all_active_users()
 
   for u in users:
@@ -22,41 +24,45 @@ async def check_minutely_reminders(bot: Bot):
     m_time = u.get('morning_reminder_time') or '08:00'
     e_time = u.get('evening_reminder_time') or '21:00'
     curr = u['currency']
+    salary_day = u['salary_day']
+
+    # Days to salary calculation
+    if today_day <= salary_day:
+      days_to_salary = salary_day - today_day
+    else:
+      days_to_salary = (30 - today_day) + salary_day
 
     # 1. Check Morning Shift Reminder
     if current_hm == m_time:
       shift = db.get_shift_for_date(uid, today_str)
-      if shift and shift['shift_type'] == 'full':
-        try:
-          await bot.send_message(
-            chat_id=uid,
-            text=(
-              f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
-              f"Сегодня у тебя запланирована <b>полная смена</b> ({shift['hours']:.0f} ч).\n"
-              f"💰 Оплата за смену: <b>+{shift['earned']:.0f} {curr}</b>\n\n"
-              f"Хорошего и продуктивного рабочего дня! 💪"
-            ),
-            parse_mode="HTML"
-          )
-          logger.info(f"Morning shift notification sent to {uid}")
-        except Exception as e:
-          logger.warning(f"Failed morning alert to {uid}: {e}")
+      if shift and shift['shift_type'] in ('full', 'half'):
+        shifts = db.get_user_month_shifts(uid, ym)
+        total_earned = sum(s['earned'] for s in shifts)
 
-      elif shift and shift['shift_type'] == 'half':
-        slot = u.get('half_day_slot', '09:00 - 14:00')
-        try:
-          await bot.send_message(
-            chat_id=uid,
-            text=(
-              f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
-              f"Сегодня у тебя смена <b>на полдня</b> ({shift['hours']:.0f} ч).\n"
-              f"⏰ Время выхода: <b>{slot}</b>\n"
-              f"💰 Оплата за смену: <b>+{shift['earned']:.0f} {curr}</b>\n\n"
-              f"Лёгкой и спокойной смены! ☕"
-            ),
-            parse_mode="HTML"
+        if shift['shift_type'] == 'full':
+          text = (
+            f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
+            f"Сегодня у тебя запланирована <b>полная смена</b> ({shift['hours']:.0f} ч).\n"
+            f"💵 Оплата за смену: <b>+{shift['earned']:.0f} {curr}</b>\n\n"
+            f"💰 <b>Уже заработано в этом месяце:</b> <code>{total_earned:,.0f} {curr}</code>\n"
+            f"⏳ До дня зарплаты ({salary_day}-е число): осталось <b>{days_to_salary} дн.</b>\n\n"
+            f"Хорошего и продуктивного рабочего дня! 💪"
           )
-          logger.info(f"Morning half-day notification sent to {uid}")
+        else:
+          slot = u.get('half_day_slot', '09:00 - 14:00')
+          text = (
+            f"🔔 <b>Доброе утро, {u['first_name'] or 'друг'}!</b>\n\n"
+            f"Сегодня у тебя смена <b>на полдня</b> ({shift['hours']:.0f} ч).\n"
+            f"⏰ Время выхода: <b>{slot}</b>\n"
+            f"💵 Оплата за смену: <b>+{shift['earned']:.0f} {curr}</b>\n\n"
+            f"💰 <b>Уже заработано в этом месяце:</b> <code>{total_earned:,.0f} {curr}</code>\n"
+            f"⏳ До дня зарплаты ({salary_day}-е число): осталось <b>{days_to_salary} дн.</b>\n\n"
+            f"Лёгкой и спокойной смены! ☕"
+          )
+
+        try:
+          await bot.send_message(chat_id=uid, text=text, parse_mode="HTML")
+          logger.info(f"Morning shift notification sent to {uid}")
         except Exception as e:
           logger.warning(f"Failed morning alert to {uid}: {e}")
 
@@ -64,13 +70,18 @@ async def check_minutely_reminders(bot: Bot):
     if current_hm == e_time:
       shift = db.get_shift_for_date(uid, today_str)
       if shift and shift['shift_type'] in ('full', 'half'):
+        shifts = db.get_user_month_shifts(uid, ym)
+        total_earned = sum(s['earned'] for s in shifts)
+
         try:
           await bot.send_message(
             chat_id=uid,
             text=(
               f"💼 <b>Смена подошла к концу!</b>\n\n"
               f"За сегодняшний день заработано: <b>+{shift['earned']:.0f} {curr}</b>.\n"
-              f"Смена учтена в табеле зарплаты. Приятного вечера и отличного отдыха! 🌙"
+              f"💰 <b>Всего заработано в этом месяце:</b> <code>{total_earned:,.0f} {curr}</code>!\n"
+              f"⏳ До дня зарплаты ({salary_day}-е число): осталось <b>{days_to_salary} дн.</b>\n\n"
+              f"Смена сохранена в табеле. Отличного вечера и приятного отдыха! 🌙"
             ),
             parse_mode="HTML"
           )

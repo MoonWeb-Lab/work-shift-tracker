@@ -4,7 +4,6 @@ import {
   hapticFeedback,
   hapticNotification,
   sendDirectTelegramMessage,
-  syncDataWithBot,
   sendDataToBot,
   WEBAPP_URL,
 } from '../utils/telegram';
@@ -45,6 +44,15 @@ const DEFAULT_SETTINGS: UserSettings = {
   morningReminderTime: '08:00',
   eveningReminderTime: '21:00',
 };
+
+const HALF_DAY_PRESETS = [
+  '09:00 - 14:00',
+  '14:00 - 20:00',
+  '16:30 - 22:00',
+  '10:00 - 15:00',
+  '12:00 - 18:00',
+  '18:00 - 23:00',
+];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -123,17 +131,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Direct test notification to Telegram chat
+  // Direct test notification to Telegram chat (with earned amount!)
   const handleSendTestNotification = async () => {
     hapticFeedback('medium');
     const msg = (
       `🔔 <b>ТЕСТОВОЕ УВЕДОМЛЕНИЕ О СМЕНЕ</b>\n\n` +
       `Привет! Это проверка работы уведомлений Счётчика смен.\n\n` +
-      `⚙️ <b>Твоё текущее расписание:</b>\n` +
+      `💰 <b>Уже заработано в этом месяце:</b> <code>0 ${form.currency}</code>\n` +
+      `⏳ До дня зарплаты (${form.salaryDay}-е число): <b>активно</b>\n\n` +
+      `⚙️ <b>Твоё расписание:</b>\n` +
       `• 🌅 Утреннее напоминание: <b>${form.morningReminderTime}</b>\n` +
       `• 🌙 Вечерний отчет: <b>${form.eveningReminderTime}</b>\n` +
-      `• 💰 День зарплаты: <b>${form.salaryDay}-е число месяца</b>\n\n` +
-      `💵 Ставка полной смены: <b>${form.rateFull} ${form.currency}</b>\n` +
+      `• 💵 Ставка смены: <b>${form.rateFull} ${form.currency}</b> (полдня: <b>${form.rateHalf} ${form.currency}</b>)\n` +
+      `• ⏰ Время выхода на полдня: <b>${form.halfDayTimeSlot}</b>\n\n` +
       `Уведомления настроены и активны! ✅`
     );
 
@@ -154,7 +164,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setTestSentSuccess(false), 3000);
   };
 
-  // Protected Settings Reset
+  // Protected Settings Reset (NO chat spam!)
   const handleResetSettingsClick = () => {
     if (!resetConfirmState) {
       hapticFeedback('medium');
@@ -172,20 +182,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setResetConfirmState(false);
       hapticNotification('success');
 
-      // Auto-save & sync defaults
+      // Auto-save defaults locally and via silent web_app_data
       onSaveSettings(DEFAULT_SETTINGS);
-      syncDataWithBot(DEFAULT_SETTINGS);
+      sendDataToBot({
+        type: 'settings_update',
+        settings: DEFAULT_SETTINGS,
+      });
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     hapticFeedback('medium');
     onSaveSettings(form);
-    
-    // 1. Direct sync with bot's shifts.db via Bot API
-    await syncDataWithBot(form);
 
-    // 2. Fallback to Telegram WebApp sendData
+    // Silent Telegram WebApp sendData (NO raw #SYNC# chat messages!)
     sendDataToBot({
       type: 'settings_update',
       settings: form,
@@ -390,7 +400,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* 2. Work Schedule Hours */}
+        {/* 2. Work Schedule Hours & Half-Day Presets */}
         <div className="space-y-3 pt-2 border-t border-slate-800">
           <div className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
@@ -443,13 +453,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-              Время выхода на полдня по умолчанию:
+          {/* Half-Day Time Slot: Presets + Custom input */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-semibold text-slate-300 block">
+              Время выхода на полдня:
             </label>
+
+            {/* Quick Presets Grid */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {HALF_DAY_PRESETS.map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() => {
+                    hapticFeedback('light');
+                    setForm({ ...form, halfDayTimeSlot: slot });
+                  }}
+                  className={`py-1.5 px-1 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer text-center ${
+                    form.halfDayTimeSlot === slot
+                      ? 'bg-sky-500/20 text-sky-300 border-sky-400 font-extrabold shadow-sm'
+                      : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white'
+                  }`}
+                >
+                  {slot}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Input */}
             <input
               type="text"
-              placeholder="09:00 - 14:00"
+              placeholder="Или введите своё время (напр. 16:30 - 22:00)"
               value={form.halfDayTimeSlot}
               onChange={(e) => setForm({ ...form, halfDayTimeSlot: e.target.value })}
               className="w-full p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-medium text-white focus:outline-none focus:border-sky-500"
@@ -511,7 +545,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* 4. Bot Notifications (Pixel-Perfect Symmetrical Grid) */}
+        {/* 4. Bot Notifications (Presets + Custom manual time picker) */}
         <div className="pt-2 border-t border-slate-800">
           <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700/80 space-y-3.5">
             {/* Toggle Header Row */}
@@ -551,7 +585,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
-            {/* Symmetrical Time Cards */}
+            {/* Symmetrical Time Cards with Custom Picker */}
             {form.notificationsEnabled && (
               <div className="space-y-3 pt-2 border-t border-slate-700/60 animate-fadeIn">
                 {/* Morning Reminder Section */}
@@ -586,6 +620,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  {/* Manual exact time picker */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Или любое своё время:</span>
+                    </span>
+                    <input
+                      type="time"
+                      value={form.morningReminderTime}
+                      onChange={(e) => setForm({ ...form, morningReminderTime: e.target.value })}
+                      className="py-1 px-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-white text-center focus:outline-none focus:border-amber-400 cursor-pointer"
+                    />
+                  </div>
                 </div>
 
                 {/* Evening Reminder Section */}
@@ -619,6 +667,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {time}
                       </button>
                     ))}
+                  </div>
+
+                  {/* Manual exact time picker */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Или любое своё время:</span>
+                    </span>
+                    <input
+                      type="time"
+                      value={form.eveningReminderTime}
+                      onChange={(e) => setForm({ ...form, eveningReminderTime: e.target.value })}
+                      className="py-1 px-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-white text-center focus:outline-none focus:border-sky-400 cursor-pointer"
+                    />
                   </div>
                 </div>
 
@@ -655,7 +717,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {savedSuccess ? (
               <>
                 <Check className="w-5 h-5 text-emerald-200" />
-                <span>Настройки сохранены и синхронизированы!</span>
+                <span>Настройки сохранены!</span>
               </>
             ) : (
               <>

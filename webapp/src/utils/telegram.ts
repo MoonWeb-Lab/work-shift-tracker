@@ -56,8 +56,8 @@ export function hapticNotification(type: 'success' | 'warning' | 'error') {
 
 /**
  * Sends a message directly to the Telegram user chat via Bot API.
- * This GUARANTEES delivery regardless of how the Mini App was opened
- * (Menu button, inline button, keyboard, direct link, or browser).
+ * Used ONLY when user explicitly asks to send reports or test notifications.
+ * Never used for hidden technical sync!
  */
 export async function sendDirectTelegramMessage(
   text: string,
@@ -87,19 +87,8 @@ export async function sendDirectTelegramMessage(
 }
 
 /**
- * Sends full sync payload to the bot so shifts.db is updated with latest shifts & settings
+ * Silent WebApp data sender. Never sends visible messages to chat.
  */
-export async function syncDataWithBot(settings?: any, shifts?: any, action?: string, extra?: any): Promise<boolean> {
-  const chatId = getTelegramUserId();
-  const payload: any = { action: action || 'sync' };
-  if (settings) payload.settings = settings;
-  if (shifts) payload.shifts = shifts;
-  if (extra) Object.assign(payload, extra);
-
-  const syncText = `#SYNC#${JSON.stringify(payload)}`;
-  return await sendDirectTelegramMessage(syncText, undefined, chatId);
-}
-
 export function sendDataToBot(data: any) {
   if (tg) {
     try {

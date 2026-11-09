@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ShiftEntry, ShiftType, UserSettings, MonthStats } from './types';
-import { initTelegramApp, hapticFeedback, syncDataWithBot } from './utils/telegram';
+import { initTelegramApp, hapticFeedback } from './utils/telegram';
 import { Header } from './components/Header';
 import { SalaryCounters } from './components/SalaryCounters';
 import { ShiftCalendar } from './components/ShiftCalendar';
@@ -101,14 +101,6 @@ export function App() {
     } catch (e) {}
   }, [shifts]);
 
-  // Background auto-sync with bot shifts.db (debounced)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      syncDataWithBot(settings, shifts);
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [shifts, settings]);
-
   // Toggle shift on calendar tap (off -> full -> half -> off)
   const handleToggleShift = (dateStr: string) => {
     setShifts((prev) => {
@@ -172,8 +164,6 @@ export function App() {
       }
       return next;
     });
-    // Sync clear action to bot
-    syncDataWithBot(undefined, undefined, 'clear_month', { year_month: yearMonthStr });
   };
 
   // Compute stats for current viewed month
